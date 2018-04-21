@@ -24,12 +24,11 @@ module private Util =
     | "require" -> Some SslMode.Require
     | _ -> None
 
-/// <summary> This module is a collection of utilities for using NpgsqlConnection(s). </summary>
-module SqlConn =
+module ConnectionString =
   open System
   open System.Web
 
-  let private ofUri (uri:Uri) =
+  let ofUri (uri:Uri) =
     let userInfo = uri.UserInfo
     let username, password =
       let i = userInfo.IndexOf ':'
@@ -80,14 +79,13 @@ module SqlConn =
     )
     builder.Username <- username
 
-    string builder
+    builder.ConnectionString
+
+/// <summary> This module is a collection of utilities for using NpgsqlConnection(s). </summary>
+module SqlConn =
 
   /// <summary> Create a new NpgsqlConnection from a connection string or uri. </summary>
   let connect connectionString = async {
-    let connectionString =
-      if Uri.IsWellFormedUriString(connectionString, UriKind.RelativeOrAbsolute) then
-        ofUri (Uri connectionString)
-      else connectionString
     let conn = new NpgsqlConnection(connectionString)
     do! conn.OpenAsync() |> Async.AwaitTask
     return conn
