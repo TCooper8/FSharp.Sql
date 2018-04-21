@@ -1,0 +1,12 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Library.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FSharp.AsyncUtil" Version="1.0.1" />
+    <PackageReference Include="Npgsql" Version="3.2.7" />
+  </ItemGroup>
+</Project>
