@@ -4,13 +4,99 @@ open Npgsql
 open System.Data.Common
 open FSharp.AsyncUtil
 
-module SqlCmd =
+module private Util =
+  open System
+
+  let (|Int|_|) (s:string) =
+    match Int32.TryParse s with
+    | false, _ -> None
+    | true, v -> Some v
+
+  let (|Bool|_|) (s:string) =
+    match Boolean.TryParse s with
+    | false, _ -> None
+    | true, b -> Some b
+
+  let (|SslMode|_|) (s:string) =
+    match s.ToLower() with
+    | "disable" -> Some SslMode.Disable
+    | "prefer" -> Some SslMode.Prefer
+    | "require" -> Some SslMode.Require
+    | _ -> None
+
+/// <summary> This module is a collection of utilities for using NpgsqlConnection(s). </summary>
+module SqlConn =
+  open System
+  open System.Web
+
+  let private ofUri (uri:Uri) =
+    let userInfo = uri.UserInfo
+    let username, password =
+      let i = userInfo.IndexOf ':'
+      if i = -1 then userInfo.Substring(0, i), userInfo.Substring(i + 1)
+      else userInfo, ""
+
+    let queryMap =
+      HttpUtility.ParseQueryString uri.Query
+      |> fun col ->
+        let keys = col.Keys |> Seq.cast<string>
+        keys
+        |> Seq.map (fun key -> key, col.[key])
+      |> Map.ofSeq
+    let query key action =
+      Map.tryFind key queryMap
+      |> Option.iter action
+
+    let builder = Npgsql.NpgsqlConnectionStringBuilder()
+
+    query "applicationName" (fun v -> builder.ApplicationName <- v)
+    query "commandTimeout" (function
+      | Util.Int i -> builder.CommandTimeout <- i
+      | _ -> failwithf "Expected `commandTimeout` to be a valid int"
+    )
+    query "connectionIdleLifetime" (function
+      | Util.Int i -> builder.ConnectionIdleLifetime <- i
+      | _ -> failwithf "Expected `connectionIdleLifetime` to be a valid int"
+    )
+    builder.Database <- (uri.AbsolutePath.Substring 1)
+    builder.Host <- uri.Host
+    query "maxPoolSize" (function
+      | Util.Int i -> builder.MaxPoolSize <- i
+      | _ -> failwithf "Expected `maxPoolSize` to be a valid int"
+    )
+    query "minPoolSize" (function
+      | Util.Int i -> builder.MinPoolSize <- i
+      | _ -> failwithf "Expected `minPoolSize` to be a valid int"
+    )
+    builder.Password <- password
+    query "pooling" (function
+      | Util.Bool b -> builder.Pooling <- b
+      | _ -> failwithf "Expected `pooling` to be a valid boolean"
+    )
+    builder.Port <- uri.Port
+    query "sslMode" (function
+      | Util.SslMode sslMode -> builder.SslMode <- sslMode
+      | _ -> failwithf "Expected `sslMode` to be a valid SslMode of 'prefer', 'require' or 'disable'"
+    )
+    builder.Username <- username
+
+    string builder
+
+  /// <summary> Create a new NpgsqlConnection from a connection string or uri. </summary>
   let connect connectionString = async {
+    let connectionString =
+      if Uri.IsWellFormedUriString(connectionString, UriKind.RelativeOrAbsolute) then
+        ofUri (Uri connectionString)
+      else connectionString
     let conn = new NpgsqlConnection(connectionString)
     do! conn.OpenAsync() |> Async.AwaitTask
     return conn
   }
 
+/// <summary> This module is a collection of utilities for an NpgsqlCommand. </summary>
+module SqlCmd =
+  /// <summary> Construct a new NpgsqlCommand from a SQL query. </summary>
+  /// <param name="sql"> The SQL statement. </param>
   let cmd sql =
     new NpgsqlCommand(sql)
 
@@ -27,7 +113,7 @@ module SqlCmd =
     cmd
 
   let thenConnect connectionString (cmd:NpgsqlCommand) = async {
-    let! conn = connect connectionString
+    let! conn = SqlConn.connect connectionString
     return withConn conn cmd
   }
 
